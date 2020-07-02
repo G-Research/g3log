@@ -38,7 +38,7 @@ void g3::only_change_at_initialization::setMaxMessageSize(size_t max_size) {
 * As a safety precaution: No memory allocated here will be moved into the background
 * worker in case of dynamic loaded library reasons instead the arguments are copied
 * inside of g3log.cpp::saveMessage*/
-LogCapture::~LogCapture() {
+LogCapture::~LogCapture() noexcept (false) {
    using namespace g3::internal;
    SIGNAL_HANDLER_VERIFY();
    saveMessage(_stream.str().c_str(), _file, _line, _function, _level, _expression, _fatal_signal, _stack_trace.c_str());
@@ -80,7 +80,7 @@ void LogCapture::capturef(const char *printf_like_message, ...) {
 #else
    static const int kMaxMessageSize = 2048;
    char finished_message[kMaxMessageSize];
-#if (defined(WIN32) || defined(_WIN32) || defined(__WIN32__) && !defined(__GNUC__))
+#if ((defined(WIN32) || defined(_WIN32) || defined(__WIN32__)) && !defined(__GNUC__))
    auto finished_message_len = _countof(finished_message);
 #else
    int finished_message_len = sizeof(finished_message);
@@ -90,7 +90,7 @@ void LogCapture::capturef(const char *printf_like_message, ...) {
    va_list arglist;
    va_start(arglist, printf_like_message);
 
-#if (defined(WIN32) || defined(_WIN32) || defined(__WIN32__) && !defined(__GNUC__))
+#if ((defined(WIN32) || defined(_WIN32) || defined(__WIN32__)) && !defined(__GNUC__))
    const int nbrcharacters = vsnprintf_s(finished_message, finished_message_len, _TRUNCATE, printf_like_message, arglist);
 #else
    const int nbrcharacters = vsnprintf(finished_message, finished_message_len, printf_like_message, arglist);

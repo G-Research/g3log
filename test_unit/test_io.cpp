@@ -376,13 +376,29 @@ namespace {
 	  action.sa_flags = SA_SIGINFO;
 	  sigaction(SIGTERM, &action, nullptr);
    }
+
+
+   std::atomic<bool>  oldSigTermCheck = {false};
+   void customOldSignalHandler(int signal_number, siginfo_t* info, void* unused_context) {
+      lastEncounteredSignal.store(signal_number);
+      oldSigTermCheck.store(true);
+   }
+   void installCustomOldSIGTERM() {
+      struct sigaction action;
+     memset(&action, 0, sizeof(action));
+     sigemptyset(&action.sa_mask);
+     action.sa_sigaction = &customOldSignalHandler;
+     action.sa_flags = SA_SIGINFO;
+     sigaction(SIGTERM, &action, nullptr);
+   }
+
 } // anonymous
 
 // Override of signal handling and testing of it should be fairly easy to port to windows
 // ref: https://github.com/KjellKod/g3log/blob/master/src/crashhandler_windows.cpp
 // what is missing is the override of signals and custom installation of signals
 // ref: https://github.com/KjellKod/g3log/blob/master/src/crashhandler_unix.cpp
-//      functions: void restoreSignalHandlerToDefault()
+//      functions: void restoreFatalHandlingToDefault()
 //                 void overrideSetupSignals(const std::map<int, std::string> overrideSignals)
 //                 void restoreSignalHandler(int signal_number)
 //
@@ -412,7 +428,6 @@ TEST(LogTest, FatalSIGTERM__UsingCustomHandler) {
    installCustomSIGTERM();
    EXPECT_EQ(customFatalCounter.load(), size_t{0});
    EXPECT_EQ(lastEncounteredSignal.load(), 0);
-   
 
    raise(SIGTERM);
    logger.reset();
@@ -420,6 +435,32 @@ TEST(LogTest, FatalSIGTERM__UsingCustomHandler) {
    EXPECT_EQ(lastEncounteredSignal.load(), SIGTERM);
    EXPECT_EQ(customFatalCounter.load(), size_t{1});
 }
+
+TEST(LogTest, FatalSIGTERM__VerifyingOldCustomHandler) {
+   RestoreFileLogger logger(log_directory);
+   g_fatal_counter.store(0);
+   customFatalCounter.store(0);
+   lastEncounteredSignal.store(0);
+
+   g3::setFatalPreLoggingHook(fatalCounter);
+   installCustomOldSIGTERM();
+   g3::overrideSetupSignals({ {SIGABRT, "SIGABRT"}, {SIGFPE, "SIGFPE"}, {SIGILL, "SIGILL"}, {SIGTERM, "SIGTERM"}});
+   g3::restoreSignalHandler(SIGTERM); // revert SIGTERM installation
+
+   EXPECT_EQ(customFatalCounter.load(), size_t{0});
+   EXPECT_EQ(lastEncounteredSignal.load(), 0);
+   EXPECT_FALSE(oldSigTermCheck.load());
+   raise(SIGTERM);
+   logger.reset();
+   EXPECT_EQ(g_fatal_counter.load(), size_t{0});
+   EXPECT_EQ(lastEncounteredSignal.load(), SIGTERM);
+   EXPECT_TRUE(oldSigTermCheck.load()); 
+}
+
+
+
+
+
 #endif
 
 #endif
@@ -560,7 +601,34 @@ TEST(CHECK, CHECK_ThatWontThrow) {
    EXPECT_FALSE(verifyContent(mockFatalMessage(), msg3));
 }
 
+TEST(CHECK, CHECK_runtimeError) {
+   RestoreFileLogger logger(log_directory);
 
+   g3::setFatalExitHandler([](g3::FatalMessagePtr msg) {
+     throw std::runtime_error("fatal test handler");
+   });
+
+   class dynamic_int_array {
+     std::unique_ptr<int[]> data_;
+     const int size_;
+   public:
+     explicit dynamic_int_array(int size)
+         : data_{std::make_unique<int[]>(size)}
+         , size_(size)
+    {}
+
+    int& at(int i) {
+      CHECK(i < size_);
+
+      // unreachable if i >= size_
+      return data_[i];
+    }
+   };
+
+   dynamic_int_array arr{3};
+
+   EXPECT_THROW(arr.at(3) = 1, std::runtime_error);
+}
 
 TEST(CustomLogLevels, AddANonFatal) {
    RestoreFileLogger logger(log_directory);

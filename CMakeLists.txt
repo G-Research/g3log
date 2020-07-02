@@ -20,8 +20,15 @@
 #    cd build;
 # 3. cmake -DCMAKE_BUILD_TYPE=Release -G "Visual Studio XXX" ..
 #     (cmake -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 12")
-#    (XXX is the Visual Studio version you are running)
-# 4. msbuild g3log.sln /p:Configuration=Release
+#     MAKE SURE you check the CMake documentation so you are using
+#     the correct bit flags(64 bit etc). The "XXX" needs 
+#     tto be replaced for your specific build system, ref: cmake docs.
+# 
+#     (Example from Appveyor Ci: 
+#      https://github.com/KjellKod/g3log/blob/master/appveyor.yml
+#      cmake -G "Visual Studio 14 2015 Win64" -DADD_G3LOG_UNIT_TEST=ON ..)
+#
+#      4. msbuild g3log.sln /p:Configuration=Release
 #
 # Try to run an example, such as:
 # 5. Release\g3log-FATAL-contract.exe
@@ -46,15 +53,17 @@
 #
 # ============================================================================
 
-cmake_minimum_required (VERSION 3.1)
-ENABLE_LANGUAGE(CXX)
+cmake_minimum_required (VERSION 3.2)
+
+project (g3log CXX)
+
+set (CMAKE_CXX_STANDARD 14)
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT (MSVC_IDE OR XCODE))
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type, one of: Release, Debug" FORCE)
 endif()
 
-
-project (g3log)
 
 message( STATUS "Build type: ${CMAKE_BUILD_TYPE}" )
 message( STATUS "Configuration types: ${CMAKE_CONFIGURATION_TYPES}" )
@@ -74,25 +83,25 @@ SET(MAJOR_VERSION 1)
 IF ( NOT VERSION )
    IF ( "${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Windows" )
       message("windows: Extracting git software version")
-      execute_process(COMMAND powershell "(git rev-list --branches HEAD | Measure-Object -line).Lines" OUTPUT_VARIABLE GIT_VERSION WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+      execute_process(COMMAND cmd /c "git rev-list --branches HEAD | find /v " " /c" OUTPUT_VARIABLE GIT_VERSION WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
    ELSE()
-      IF(UNIX OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin") 
-         message( STATUS "nix: Extracting git software version" ) 
+      IF(UNIX OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+         message( STATUS "nix: Extracting git software version" )
       ELSE()
-         message( STATUS "unknown platform: extracting git software version" ) 
+         message( STATUS "unknown platform: extracting git software version" )
       ENDIF()
-      execute_process(COMMAND bash "-c" "git rev-list --branches HEAD | wc -l | tr -d ' ' | tr -d '\n'" OUTPUT_VARIABLE GIT_VERSION WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+      execute_process(COMMAND bash "-c" "git rev-list --branches HEAD | wc -l | tr -d ' ' | tr -d '\n'" OUTPUT_VARIABLE GIT_VERSION WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
    ENDIF()
- 
+
    SET(MINOR_VERSION 3)
    math(EXPR VERSION-BASE ${GIT_VERSION}/255)
    math(EXPR VERSION-REMAINDER ${GIT_VERSION}%255)
-   message( STATUS "git build version: ${GIT_VERSION}" ) 
-   message( STATUS "version base: ${VERSION-BASE}" ) 
-   message( STATUS "version remainder: ${VERSION-REMAINDER}" ) 
+   message( STATUS "git build version: ${GIT_VERSION}" )
+   message( STATUS "version base: ${VERSION-BASE}" )
+   message( STATUS "version remainder: ${VERSION-REMAINDER}" )
    # SET(BUILD_NUMBER ${GIT_VERSION})
-   SET(BUILD_NUMBER ${VERSION-BASE}) 
-   SET(VERSION ${MAJOR_VERSION}.${MINOR_VERSION}.${BUILD_NUMBER}-${VERSION-REMAINDER}) 
+   SET(BUILD_NUMBER ${VERSION-BASE})
+   SET(VERSION ${MAJOR_VERSION}.${MINOR_VERSION}.${BUILD_NUMBER}-${VERSION-REMAINDER})
 ENDIF()
 message( STATUS "Software Version: ${VERSION}" )
 
@@ -158,23 +167,29 @@ message( STATUS "Software Version: ${VERSION}" )
    INCLUDE (${g3log_SOURCE_DIR}/test_unit/Test.cmake)
 
 
-   
 
-IF(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
    # ==========================================================================
-   # BETA : package manager for G3Log,. not yet reliable. Use at your own risk
-   #        only tested on Ubuntu and CentOS
-   #
-   #        For OSX you can install an older version using 'brew install'
-   #
+   # CMAKE INSTALL AND CPACK OPTIONS:
    # ==========================================================================
-   #   Package handling is done AFTER all other CMake setup
-   #   usage:   make package
-   #   Check the output result and install accordingly.
+   #
+   #   Alternative 1:
+   #      Package handling is done AFTER all other CMake setup
+   #      usage:   make package
+   #      Check the output result and install accordingly.
+   #
+   #   Alternative 2:
+   #      usage: make; sudo make install
+   #
+   #   For OSX you can also install an older version using 'brew install'
+   #
    # ==========================================================================
    INCLUDE (${g3log_SOURCE_DIR}/CPackLists.txt)
-ENDIF()
 
+
+IF(MINGW)
+   # this enables strerror_s
+   ADD_DEFINITIONS(-DMINGW_HAS_SECURE_API)
+ENDIF()
 
 IF (NOT MSVC)
    message( STATUS "\n\n
